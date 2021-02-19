@@ -15,3 +15,9 @@ You can download the executable at https://www.uv-packer.com/blender/
 You can find the documentation for UV-Packer with more information about the
 installation and usage here:
 https://doc.uv-packer.com
+
+
+## Requirements
+
+The addon requires Blender v2.9. And currently UVPacker exists only for 64 bit Windows.
+
