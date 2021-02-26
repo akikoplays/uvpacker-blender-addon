@@ -24,7 +24,7 @@ https://doc.uv-packer.com
 
 ## Requirements
 The addon requires Blender v2.9. 
-UV-Packer exists only for 64 bit Windows.
+UV-Packer exists only for 64 bit Windows (Linux, Apple to be released soon)
 
 ## Video Features
 
