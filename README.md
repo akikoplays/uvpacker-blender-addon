@@ -21,3 +21,11 @@ https://doc.uv-packer.com
 
 The addon requires Blender v2.9. And currently UVPacker exists only for 64 bit Windows.
 
+
+## Changelog 
+
+[1.1.0] 29-09-2021
+* Add support for Blender 3.0
+* Add support for chart pinning
+* Improve hole detection to find and fill holes that were previously ignored
+* Improve performance for multi-tile packing
