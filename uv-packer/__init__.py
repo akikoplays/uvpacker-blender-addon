@@ -22,7 +22,7 @@ bl_info = {
   "name": "UV-Packer",
   "description": "Automated, fast, accurate, free UV-Packing",
   "blender": (2, 90, 0),
-  "version" : (1, 0, 0),
+  "version" : (1, 1, 0),
   "category": "UV",
   "author": "Boris Posavec",
   "location": "UV Editing > Sidebar > UV-Packer",
@@ -103,7 +103,9 @@ class misc:
         data += (vert.index).to_bytes(4, byteorder="little")
         data += bytearray(struct.pack("<ddd", vert.normal.x, vert.normal.y, vert.normal.z))
         uv_coord = loop[uv_layer].uv
+        isPinned = loop[uv_layer].pin_uv
         data += bytearray(struct.pack("<dd", uv_coord.x, uv_coord.y))
+        data += bytearray(struct.pack("<?", isPinned))
         data += (indexCount).to_bytes(4, byteorder="little")
         indexCount += 1
 
@@ -127,7 +129,7 @@ class misc:
         readPtr += 8
         loop[uv_layer].uv = [x, y]
 
-    bmesh.update_edit_mesh(obj.data, False, False)
+    bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
     return readPtr
 
   class QueueMessage:
