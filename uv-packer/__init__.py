@@ -22,11 +22,11 @@ bl_info = {
   "name": "UV-Packer",
   "description": "Automated, fast, accurate, free UV-Packing",
   "blender": (2, 90, 0),
-  "version" : (1, 1, 0),
+  "version" : (1, 3, 0),
   "category": "UV",
   "author": "Boris Posavec",
   "location": "UV Editing > Sidebar > UV-Packer",
-  "wiki_url": "https://doc.uv-packer.com",
+  "doc_url": "https://docs.3d-plugin.com/uv-packer/blender",
   "tracker_url": "https://discord.gg/r8jPCWk",
   "support": "COMMUNITY",
 }
@@ -34,7 +34,7 @@ bl_info = {
 import bpy
 import bmesh
 import os
-import webbrowser
+import platform
 import subprocess
 import time
 import queue
@@ -101,7 +101,6 @@ class misc:
       for loop in face.loops:
         vert = loop.vert
         data += (vert.index).to_bytes(4, byteorder="little")
-        data += bytearray(struct.pack("<ddd", vert.normal.x, vert.normal.y, vert.normal.z))
         uv_coord = loop[uv_layer].uv
         isPinned = loop[uv_layer].pin_uv
         data += bytearray(struct.pack("<dd", uv_coord.x, uv_coord.y))
@@ -358,7 +357,7 @@ class UVPackerPanel(bpy.types.Panel):
     row.operator("wm.url_open", text="UV-Packer Homepage", icon="HOME").url = "https://www.uv-packer.com"
     row = layout.row()
     row.scale_y = 1.5
-    row.operator("wm.url_open", text="Documentation" , icon="QUESTION").url = "https://doc.uv-packer.com/"
+    row.operator("wm.url_open", text="Documentation" , icon="QUESTION").url = "https://docs.3d-plugin.com/uv-packer/blender"
 
 class UVPackerPackButtonOperator(Operator):
   bl_idname = "uvpackeroperator.packbtn"
@@ -392,13 +391,16 @@ class UVPackerPackButtonOperator(Operator):
       "TilesY": packer_props.uvp_tilesY
     }
 
-    packerDir = os.path.dirname(os.path.realpath(__file__))
-    packerExe = packerDir + "\\UV-Packer-Blender.exe"
+    packerDir = "/Applications/UV-Packer-Blender.app/Contents/MacOS/"
+    packerExe = "UV-Packer-Blender"
+    if (platform.system() == 'Windows'):
+      packerDir = os.path.dirname(os.path.realpath(__file__))
+      packerExe = packerExe + ".exe"
 
     try:
-      self.process = subprocess.Popen([packerExe], stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
+      self.process = subprocess.Popen([packerDir + "/" + packerExe], stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
     except:
-      msgStr = "UV-Packer executable not found. Please copy UV-Packer-Blender.exe to: " + packerDir
+      msgStr = 'UV-Packer executable not found in "' + packerDir + '". Please check the Documentation for installation information.'
       self.update_status(msgStr, "ERROR")
       return {"FINISHED"}
 
