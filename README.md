@@ -19,10 +19,12 @@ https://doc.uv-packer.com
 
 ## Requirements
 
-The addon requires Blender v2.9. And currently UVPacker exists only for 64 bit Windows.
-
+The addon requires Blender v2.9. And currently UVPacker exists only for 64 bit Windows and MacOS (both Sillicon and Intel).
 
 ## Changelog 
+[1.3.0] 19-10-2022
+* UV-Packer Addon for Blender v1.3.0
+* Added support for Mac
 
 [1.1.0] 29-09-2021
 * Add support for Blender 3.0
