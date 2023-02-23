@@ -22,7 +22,7 @@ bl_info = {
   "name": "UV-Packer",
   "description": "Automated, fast, accurate, free UV-Packing",
   "blender": (2, 90, 0),
-  "version" : (1, 3, 0),
+  "version" : (1, 4, 0),
   "category": "UV",
   "author": "Boris Posavec",
   "location": "UV Editing > Sidebar > UV-Packer",
@@ -78,55 +78,94 @@ class misc:
         uvs.remove(uvs[name])
     return
 
-  def gather_object_data(obj):
-    bm = bmesh.from_edit_mesh(obj.data)
-    bm.normal_update()
-    bm.verts.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-    uv_layer = bm.loops.layers.uv.verify()
+  def gather_geometry_data(meshes, selection_only):
+    allObjectData = bytearray()
+    usedFaces = {}
+    for object_idx, obj in enumerate(meshes):
+      objectData, usedObjFaces = misc.gather_object_data(object_idx, obj, selection_only)
+      if len(objectData) > 0:
+        allObjectData += objectData
+        usedFaces[object_idx] = usedObjFaces
 
     data = bytearray()
-    nameBytes = obj.name.encode()
-    data += (len(nameBytes)).to_bytes(4, byteorder="little")
-    data.extend(nameBytes)
+    data += (len(usedFaces)).to_bytes(4, byteorder="little")
+    data += allObjectData
+    return data, usedFaces
 
-    data += (len(bm.verts)).to_bytes(4, byteorder="little")
-    for vert in bm.verts:
-      data += bytearray(struct.pack("<ddd", vert.co.x, vert.co.y, vert.co.z))
-
-    indexCount = 0
-    data += (len(bm.faces)).to_bytes(4, byteorder="little")
-    for i, face in enumerate(bm.faces):
-      data += (len(face.loops)).to_bytes(4, byteorder="little")
-      for loop in face.loops:
-        vert = loop.vert
-        data += (vert.index).to_bytes(4, byteorder="little")
-        uv_coord = loop[uv_layer].uv
-        isPinned = loop[uv_layer].pin_uv
-        data += bytearray(struct.pack("<dd", uv_coord.x, uv_coord.y))
-        data += bytearray(struct.pack("<?", isPinned))
-        data += (indexCount).to_bytes(4, byteorder="little")
-        indexCount += 1
-
-    return data
-
-  def replace_object_data(obj, message, readPtr):
+  def gather_object_data(object_idx, obj, selection_only):
     bm = bmesh.from_edit_mesh(obj.data)
     bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
     uv_layer = bm.loops.layers.uv.verify()
-    faces = [f for f in bm.faces]
+
+    syncmode = bpy.context.scene.tool_settings.use_uv_select_sync
+    allFaceData = bytearray()
+    usedObjFaces = []
+    indexCount = 0
+    for i, face in enumerate(bm.faces):
+      faceData, indexCount = misc.gather_face_data(face, uv_layer, indexCount, selection_only, syncmode)
+      if len(faceData) > 0:
+        allFaceData += faceData
+        usedObjFaces.append(i)
+
+    objectData = bytearray()
+    if len(usedObjFaces) > 0:
+      objectData += (object_idx).to_bytes(4, byteorder="little")
+      nameBytes = obj.name.encode()
+      objectData += (len(nameBytes)).to_bytes(4, byteorder="little")
+      objectData.extend(nameBytes)
+      objectData += (len(bm.verts)).to_bytes(4, byteorder="little")
+      for vert in bm.verts:
+        objectData += bytearray(struct.pack("<ddd", vert.co.x, vert.co.y, vert.co.z))
+
+      objectData += (len(usedObjFaces)).to_bytes(4, byteorder="little")
+      objectData += allFaceData
+
+    return objectData, usedObjFaces
+
+  def gather_face_data(face, uv_layer, indexCount, selection_only, syncmode):
+    faceData = bytearray()
+    adjustedindexCount = indexCount
+    faceData += (len(face.loops)).to_bytes(4, byteorder="little")
+    for loop in face.loops:
+      if selection_only:
+        if syncmode and not face.select:
+          return bytearray(), indexCount
+        elif not syncmode and not loop[uv_layer].select:
+          return bytearray(), indexCount
+
+      vert = loop.vert
+      faceData += (vert.index).to_bytes(4, byteorder="little")
+      uv_coord = loop[uv_layer].uv
+      isPinned = loop[uv_layer].pin_uv
+      faceData += bytearray(struct.pack("<dd", uv_coord.x, uv_coord.y))
+      faceData += bytearray(struct.pack("<?", isPinned))
+      faceData += (adjustedindexCount).to_bytes(4, byteorder="little")
+      adjustedindexCount += 1
+
+    return faceData, adjustedindexCount
+
+  def replace_object_data(obj, message, readPtr, selection_only, usedObjFaces):
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    uv_layer = bm.loops.layers.uv.verify()
 
     numResultVerts = struct.unpack_from("<I", message, readPtr)[0]
     readPtr += 4
 
-    for face in faces:
-      for loop in face.loops:
-        x = struct.unpack_from("<d", message, readPtr)[0]
-        readPtr += 8
-        y = struct.unpack_from("<d", message, readPtr)[0]
-        readPtr += 8
-        loop[uv_layer].uv = [x, y]
+    currentUsedFaceIndex = 0
+    finalUsedFace = len(usedObjFaces) - 1
+    for i, face in enumerate(bm.faces):
+      if not selection_only or i == usedObjFaces[currentUsedFaceIndex]:
+        if currentUsedFaceIndex < finalUsedFace:
+          currentUsedFaceIndex += 1
+        for loop in face.loops:
+          x = struct.unpack_from("<d", message, readPtr)[0]
+          readPtr += 8
+          y = struct.unpack_from("<d", message, readPtr)[0]
+          readPtr += 8
+          loop[uv_layer].uv = [x, y]
 
     bmesh.update_edit_mesh(obj.data, loop_triangles=False, destructive=False)
     return readPtr
@@ -158,24 +197,15 @@ class misc:
     return data
 
   def data_exchange_thread(process, options, meshes, msg_queue):
-    numObjects = len(meshes)
-    if numObjects == 0:
-      msg_queue.put((misc.QueueMessage.MESSAGE, "No objects to pack.", misc.QueueMsgSeverity.ERROR))
-      return
-
     msg_queue.put((misc.QueueMessage.MESSAGE, "Preparing geometry"))
 
+    geometryData, usedFaces = misc.gather_geometry_data(meshes, options["Selection"])
     binaryData = bytearray()
     binaryData += (bl_info["version"][0]).to_bytes(4, byteorder="little")
     binaryData += (bl_info["version"][1]).to_bytes(4, byteorder="little")
     binaryData += (bl_info["version"][2]).to_bytes(4, byteorder="little")
     binaryData += misc.encodeOptions(options)
-    binaryData += (numObjects).to_bytes(4, byteorder="little")
-
-    for object_idx, obj in enumerate(meshes):
-      binaryData += (object_idx).to_bytes(4, byteorder="little")
-      binaryData += misc.gather_object_data(obj)
-
+    binaryData += geometryData
     sumBytes = len(binaryData)
     binaryData = sumBytes.to_bytes(4, byteorder="little") + binaryData
 
@@ -215,7 +245,7 @@ class misc:
         readPtr += 4
         objName = message[readPtr:readPtr+nameSize].decode()
         readPtr += nameSize
-        readPtr = misc.replace_object_data(meshes[objId], message, readPtr)
+        readPtr = misc.replace_object_data(meshes[objId], message, readPtr, options["Selection"], usedFaces[objId])
 
       coverage = struct.unpack_from("<d", message, readPtr)[0]
       msg_queue.put((misc.QueueMessage.STATS, str(round(coverage, 2))))
@@ -252,6 +282,7 @@ class misc:
 
 class UVPackProperty(PropertyGroup):
   uvp_combine: BoolProperty(name="Combine", description="Pack all selected objects in one UV Sheet", default = True)
+  uvp_selection_only: BoolProperty(name="Selection", description="Pack only selected faces", default = False)
   uvp_width: IntProperty(name="w:", description="UV Sheet Width", default = 1024, min = 8)
   uvp_height: IntProperty(name="h:", description="UV Sheet Height", default = 1024, min = 8)
   uvp_padding: FloatProperty(name="Padding", description="UV Sheet Padding", default = 2.0, min = 0.0)
@@ -301,17 +332,14 @@ class UVPackerPanel(bpy.types.Panel):
     layout = self.layout
     scene = context.scene
     packerProps = scene.UVPackerProps
-    obj = context.object
-
-    mesh = bpy.context.object.data
-    uv_map = mesh.uv_layers.active
 
     row = layout.row()
     row.scale_y = 3.0
     row.operator("uvpackeroperator.packbtn", text="Pack")
     row = layout.row(align=True)
     row.prop(packerProps, "uvp_combine")
-    
+    row.prop(packerProps, "uvp_selection_only")
+
     row = layout.row()
     row.label(text="≡ UV Sheet:")
     row.label(text=packerProps.uvp_stats)
@@ -369,13 +397,23 @@ class UVPackerPackButtonOperator(Operator):
     self.report({severity}, msg)
 
   def execute(self, context):
+    if len(bpy.context.selected_objects) == 0:
+      self.update_status("No objects are selected.", "ERROR")
+      return {"FINISHED"}
+
+    unique_objects = misc.get_unique_objects(context.selected_objects)
+    meshes = misc.get_meshes(unique_objects)
+    if len(meshes) == 0:
+      self.update_status("None of the selected objects have UV data to pack.", "ERROR")
+      return {"FINISHED"}
+
     self.timer = time.time()
     self.coverage = 0.0
     packer_props = context.scene.UVPackerProps
-    packer_props.dbg_msg = ""
-    
-    if len(bpy.context.selected_objects) == 0:
-      return {"FINISHED"}
+
+    if packer_props.uvp_create_channel:
+      misc.set_map_name(packer_props.uvp_channel_name)
+      misc.add_uv_channel_to_objects(unique_objects)
 
     options = {
       "PackMode": misc.resolve_engine(packer_props.uvp_engine),
@@ -388,7 +426,8 @@ class UVPackerPackButtonOperator(Operator):
       "FullRotation": packer_props.uvp_fullRotate,
       "Combine": packer_props.uvp_combine,
       "TilesX": packer_props.uvp_tilesX,
-      "TilesY": packer_props.uvp_tilesY
+      "TilesY": packer_props.uvp_tilesY,
+      "Selection": packer_props.uvp_selection_only
     }
 
     packerDir = "/Applications/UV-Packer-Blender.app/Contents/MacOS/"
@@ -404,19 +443,9 @@ class UVPackerPackButtonOperator(Operator):
       self.update_status(msgStr, "ERROR")
       return {"FINISHED"}
 
-    wm = context.window_manager
-    wm.modal_handler_add(self)
-
-    unique_objects = misc.get_unique_objects(context.selected_objects)
-    meshes = misc.get_meshes(unique_objects)
-
-    if packer_props.uvp_create_channel:
-      misc.set_map_name(packer_props.uvp_channel_name)
-      misc.add_uv_channel_to_objects(unique_objects)
-
     bpy.ops.object.mode_set(mode = "EDIT")
     self.msg_queue = queue.SimpleQueue()
-
+    context.window_manager.modal_handler_add(self)
     self.packer_thread = threading.Thread(target=misc.data_exchange_thread, args=(self.process, options, meshes, self.msg_queue))
     self.packer_thread.daemon = True
     self.packer_thread.start()
@@ -510,7 +539,6 @@ def register():
   if bpy.app.version < (2, 90, 0):
     return
 
-  from bpy.utils import register_class
   for cls in classes:
     bpy.utils.register_class(cls)
     registered_classes.append(cls)
@@ -518,9 +546,9 @@ def register():
   bpy.types.Scene.UVPackerProps = PointerProperty(type=UVPackProperty)
 
 def unregister():
-  from bpy.utils import unregister_class
   for cls in registered_classes:
     bpy.utils.unregister_class(cls)
+  del registered_classes[:]
   del bpy.types.Scene.UVPackerProps
 
 if __name__ == "__main__":
