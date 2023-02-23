@@ -21,7 +21,12 @@ https://doc.uv-packer.com
 
 The addon requires Blender v2.9. And currently UVPacker exists only for 64 bit Windows and MacOS (both Sillicon and Intel).
 
+
 ## Changelog 
+
+[1.4.0] 23-02-2023
+* Option to pack only selected charts and provides more status messages to avoid confusion
+
 [1.3.0] 19-10-2022
 * UV-Packer Addon for Blender v1.3.0
 * Added support for Mac
